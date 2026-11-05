@@ -44,7 +44,7 @@
                 <input type="number" id="nuevoMax" placeholder="Ej: 40000">
             </div>
         </div>
-        <button onclick="crearInstrumento()">Registrar Nuevo Instrumento</button>
+        <button id="guardar-instrumento" onclick="crearInstrumento()">Guardar Instrumento</button>
     </div>
 
     <div class="container">
@@ -52,7 +52,7 @@
         
         <div class="form-group">
             <label for="instrumento">Seleccionar Instrumento:</label>
-            <select id="instrumento">
+            <select id="instrumento" disabled>
                 <!-- Se llena dinámicamente desde la BD -->
             </select>
         </div>
@@ -62,7 +62,7 @@
             <input type="number" id="valor" step="0.1" placeholder="Ej: 105.5">
         </div>
 
-        <button onclick="enviarDato()">Procesar y Enviar Trama</button>
+        <button id="enviar-dato" onclick="enviarDato()" disabled>Procesar y Guardar Envío</button>
 
         <h2>Registros de Envíos</h2>
         <table>
@@ -71,6 +71,8 @@
                     <th>ID</th>
                     <th>Instrumento</th>
                     <th>Valor</th>
+                    <th>Trama ARINC (hex)</th>
+                    <th>Tensión (V)</th>
                     <th>Máx / Mín</th>
                     <th>Fecha</th>
                     <th>Acción</th>
@@ -85,14 +87,21 @@
     <script>
         // Cargar instrumentos en el combo desplegable
         async function cargarInstrumentos() {
+            const select = document.getElementById('instrumento');
+            const botonEnvio = document.getElementById('enviar-dato');
             try {
                 const res = await fetch('/api/instrumentos');
+                if (!res.ok) {
+                    const resultado = await res.json();
+                    throw new Error(resultado.error || 'No se pudieron cargar los instrumentos.');
+                }
                 const instrumentos = await res.json();
-                const select = document.getElementById('instrumento');
                 select.innerHTML = '';
 
                 if (instrumentos.length === 0) {
                     select.innerHTML = '<option value="">No hay instrumentos creados</option>';
+                    select.disabled = true;
+                    botonEnvio.disabled = true;
                     return;
                 }
 
@@ -102,8 +111,14 @@
                     option.textContent = `${inst.nombre} (Label ${inst.label})`;
                     select.appendChild(option);
                 });
+                select.disabled = false;
+                botonEnvio.disabled = false;
             } catch (error) {
                 console.error("Error al cargar instrumentos:", error);
+                select.innerHTML = '<option value="">Error al cargar instrumentos</option>';
+                select.disabled = true;
+                botonEnvio.disabled = true;
+                alert('No se pudieron cargar los instrumentos: ' + error.message);
             }
         }
 
@@ -114,27 +129,43 @@
             const minimo = document.getElementById('nuevoMin').value;
             const maximo = document.getElementById('nuevoMax').value;
 
-            if (!nombre || !label || !minimo || !maximo) {
+            if (!nombre.trim() || !label.trim() || minimo === '' || maximo === '') {
                 alert('Por favor complete todos los campos del instrumento.');
                 return;
             }
+            if (!/^[0-7]{1,3}$/.test(label.trim()) || parseInt(label.trim(), 8) > 255) {
+                alert('El label debe ser un número octal entre 0 y 377.');
+                return;
+            }
+            if (!Number.isFinite(Number(minimo)) || !Number.isFinite(Number(maximo)) ||
+                Number(minimo) >= Number(maximo)) {
+                alert('El mínimo debe ser menor que el máximo.');
+                return;
+            }
 
-            const res = await fetch('/api/instrumentos', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nombre, label, minimo, maximo })
-            });
+            const boton = document.getElementById('guardar-instrumento');
+            boton.disabled = true;
+            try {
+                const res = await fetch('/api/instrumentos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nombre: nombre.trim(), label: label.trim(), minimo, maximo })
+                });
 
-            const resultado = await res.json();
-            if (resultado.success) {
+                const resultado = await res.json();
+                if (!res.ok || !resultado.success) {
+                    throw new Error(resultado.error || 'No se pudo guardar el instrumento.');
+                }
                 alert('¡Instrumento creado con éxito!');
                 document.getElementById('nuevoNombre').value = '';
                 document.getElementById('nuevoLabel').value = '';
                 document.getElementById('nuevoMin').value = '';
                 document.getElementById('nuevoMax').value = '';
-                cargarInstrumentos(); // Recargar el combo
-            } else {
-                alert('Error al crear el instrumento: ' + resultado.error);
+                await cargarInstrumentos();
+            } catch (error) {
+                alert('Error al guardar el instrumento: ' + error.message);
+            } finally {
+                boton.disabled = false;
             }
         }
 
@@ -150,8 +181,10 @@
                     <td>${item.id}</td>
                     <td>${item.instrumento}</td>
                     <td>${item.valor}</td>
+                    <td>${item.palabra_hex || '—'}</td>
+                    <td>${item.tension ?? '—'}</td>
                     <td>${item.maximo} / ${item.minimo}</td>
-                    <td>${new Date(item.fecha_creacion).toLocaleString()}</td>
+                    <td>${new Date(item.fecha).toLocaleString()}</td>
                     <td><button class="btn-delete" onclick="eliminarEnvio(${item.id})">Eliminar</button></td>
                 `;
                 tbody.appendChild(tr);
@@ -162,24 +195,30 @@
             const instrumento = document.getElementById('instrumento').value;
             const valor = document.getElementById('valor').value;
 
-            if (!instrumento || !valor) {
+            if (!instrumento || valor === '') {
                 alert('Por favor seleccione un instrumento e ingrese un valor.');
                 return;
             }
 
-            const res = await fetch('/api/envios', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ instrumento, valor })
-            });
-
-            const resultado = await res.json();
-            if (resultado.success) {
-                alert(`¡Procesado con éxito!\nPalabra Hex: ${resultado.hex}\nTensión Auricular: ${resultado.tension}V`);
+            const boton = document.getElementById('enviar-dato');
+            boton.disabled = true;
+            try {
+                const res = await fetch('/api/envios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ instrumento, valor })
+                });
+                const resultado = await res.json();
+                if (!res.ok || !resultado.success) {
+                    throw new Error(resultado.error || 'No se pudo guardar el envío.');
+                }
+                alert(`Envío ${resultado.id} procesado y guardado.\nTrama ARINC: ${resultado.hex}\nTensión calculada: ${resultado.tension} V\nNo se transmitió a hardware.`);
                 document.getElementById('valor').value = '';
-                cargarEnvios();
-            } else {
-                alert('Error al procesar el envío: ' + resultado.error);
+                await cargarEnvios();
+            } catch (error) {
+                alert('Error al guardar el envío: ' + error.message);
+            } finally {
+                boton.disabled = false;
             }
         }
 

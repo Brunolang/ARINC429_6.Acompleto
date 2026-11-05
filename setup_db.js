@@ -21,9 +21,21 @@ async function inicializarTablas() {
                 valor FLOAT NOT NULL,
                 maximo FLOAT NOT NULL,
                 minimo FLOAT NOT NULL,
+                palabra_hex VARCHAR(10) NULL,
+                tension FLOAT NULL,
                 fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        const [hexColumn] = await db.execute("SHOW COLUMNS FROM envios LIKE 'palabra_hex'");
+        if (hexColumn.length === 0) {
+            await db.execute('ALTER TABLE envios ADD COLUMN palabra_hex VARCHAR(10) NULL');
+        }
+
+        const [tensionColumn] = await db.execute("SHOW COLUMNS FROM envios LIKE 'tension'");
+        if (tensionColumn.length === 0) {
+            await db.execute('ALTER TABLE envios ADD COLUMN tension FLOAT NULL');
+        }
 
         console.log("¡Tablas creadas o verificadas con éxito!");
         process.exit(0);

@@ -1,0 +1,24 @@
+CREATE DATABASE IF NOT EXISTS arinc429
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+USE arinc429;
+
+CREATE TABLE IF NOT EXISTS instrumentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL UNIQUE,
+    label VARCHAR(10) NOT NULL,
+    minimo FLOAT NOT NULL,
+    maximo FLOAT NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS envios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    instrumento VARCHAR(100) NOT NULL,
+    valor FLOAT NOT NULL,
+    maximo FLOAT NOT NULL,
+    minimo FLOAT NOT NULL,
+    palabra_hex VARCHAR(10) NULL,
+    tension FLOAT NULL,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
