@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Interfaz de Aviónica - ARINC 429</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px; }
+        h1, h2 { color: #4CAF50; border-bottom: 2px solid #333; padding-bottom: 5px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, input { width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #45a049; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #444; padding: 10px; text-align: left; }
+        th { background: #2d2d2d; }
+        .btn-delete { background: #d32f2f; padding: 5px 10px; }
+        .btn-delete:hover { background: #b71c1c; }
+        .row { display: flex; gap: 10px; }
+        .row .form-group { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Instrumentos (CRUD Parte A)</h1>
+        <div class="row">
+            <div class="form-group">
+                <label for="nuevoNombre">Nombre:</label>
+                <input type="text" id="nuevoNombre" placeholder="Ej: Altímetro">
+            </div>
+            <div class="form-group">
+                <label for="nuevoLabel">Label (Octal):</label>
+                <input type="text" id="nuevoLabel" placeholder="Ej: 203">
+            </div>
+        </div>
+        <div class="row">
+            <div class="form-group">
+                <label for="nuevoMin">Mínimo:</label>
+                <input type="number" id="nuevoMin" placeholder="Ej: -1000">
+            </div>
+            <div class="form-group">
+                <label for="nuevoMax">Máximo:</label>
+                <input type="number" id="nuevoMax" placeholder="Ej: 40000">
+            </div>
+        </div>
+        <button onclick="crearInstrumento()">Registrar Nuevo Instrumento</button>
+    </div>
+
+    <div class="container">
+        <h1>Panel de Control de Aviónica (ARINC 429)</h1>
+        
+        <div class="form-group">
+            <label for="instrumento">Seleccionar Instrumento:</label>
+            <select id="instrumento">
+                <!-- Se llena dinámicamente desde la BD -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="valor">Valor de Entrada:</label>
+            <input type="number" id="valor" step="0.1" placeholder="Ej: 105.5">
+        </div>
+
+        <button onclick="enviarDato()">Procesar y Enviar Trama</button>
+
+        <h2>Registros de Envíos</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Instrumento</th>
+                    <th>Valor</th>
+                    <th>Máx / Mín</th>
+                    <th>Fecha</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-cuerpo">
+                <!-- Se llena dinámicamente -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Cargar instrumentos en el combo desplegable
+        async function cargarInstrumentos() {
+            try {
+                const res = await fetch('/api/instrumentos');
+                const instrumentos = await res.json();
+                const select = document.getElementById('instrumento');
+                select.innerHTML = '';
+
+                if (instrumentos.length === 0) {
+                    select.innerHTML = '<option value="">No hay instrumentos creados</option>';
+                    return;
+                }
+
+                instrumentos.forEach(inst => {
+                    const option = document.createElement('option');
+                    option.value = inst.nombre;
+                    option.textContent = `${inst.nombre} (Label ${inst.label})`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error al cargar instrumentos:", error);
+            }
+        }
+
+        // Crear un instrumento desde el formulario superior
+        async function crearInstrumento() {
+            const nombre = document.getElementById('nuevoNombre').value;
+            const label = document.getElementById('nuevoLabel').value;
+            const minimo = document.getElementById('nuevoMin').value;
+            const maximo = document.getElementById('nuevoMax').value;
+
+            if (!nombre || !label || !minimo || !maximo) {
+                alert('Por favor complete todos los campos del instrumento.');
+                return;
+            }
+
+            const res = await fetch('/api/instrumentos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nombre, label, minimo, maximo })
+            });
+
+            const resultado = await res.json();
+            if (resultado.success) {
+                alert('¡Instrumento creado con éxito!');
+                document.getElementById('nuevoNombre').value = '';
+                document.getElementById('nuevoLabel').value = '';
+                document.getElementById('nuevoMin').value = '';
+                document.getElementById('nuevoMax').value = '';
+                cargarInstrumentos(); // Recargar el combo
+            } else {
+                alert('Error al crear el instrumento: ' + resultado.error);
+            }
+        }
+
+        async function cargarEnvios() {
+            const res = await fetch('/api/envios');
+            const datos = await res.json();
+            const tbody = document.getElementById('tabla-cuerpo');
+            tbody.innerHTML = '';
+            
+            datos.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.id}</td>
+                    <td>${item.instrumento}</td>
+                    <td>${item.valor}</td>
+                    <td>${item.maximo} / ${item.minimo}</td>
+                    <td>${new Date(item.fecha_creacion).toLocaleString()}</td>
+                    <td><button class="btn-delete" onclick="eliminarEnvio(${item.id})">Eliminar</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function enviarDato() {
+            const instrumento = document.getElementById('instrumento').value;
+            const valor = document.getElementById('valor').value;
+
+            if (!instrumento || !valor) {
+                alert('Por favor seleccione un instrumento e ingrese un valor.');
+                return;
+            }
+
+            const res = await fetch('/api/envios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ instrumento, valor })
+            });
+
+            const resultado = await res.json();
+            if (resultado.success) {
+                alert(`¡Procesado con éxito!\nPalabra Hex: ${resultado.hex}\nTensión Auricular: ${resultado.tension}V`);
+                document.getElementById('valor').value = '';
+                cargarEnvios();
+            } else {
+                alert('Error al procesar el envío: ' + resultado.error);
+            }
+        }
+
+        async function eliminarEnvio(id) {
+            if (confirm(`¿Estás seguro de eliminar el registro ID ${id}?`)) {
+                await fetch(`/api/envios/${id}`, { method: 'DELETE' });
+                cargarEnvios();
+            }
+        }
+
+        // Inicializar datos al cargar la página
+        window.onload = () => {
+            cargarInstrumentos();
+            cargarEnvios();
+        };
+    </script>
+</body>
+</html>
